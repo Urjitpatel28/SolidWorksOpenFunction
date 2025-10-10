@@ -1,24 +1,21 @@
 ﻿using MyApp.UI.Models;
+using SolidWorksOpenFunction;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Linq;
 
 namespace MyApp.UI.ViewModels
 {
 	public class SolidWorksSelectorViewModel : INotifyPropertyChanged
 	{
-		public SolidWorksSelectorViewModel()
-		{
-			SelectedVersion = SolidWorksVersions[0]; // Sets the first item as default
-		}
+        public SolidWorksSelectorViewModel()
+        {
+            LoadVersions();
+        }
 
-		public ObservableCollection<VersionOption> SolidWorksVersions { get; } =
-			new ObservableCollection<VersionOption>
-			{
-				new VersionOption { Display = "SOLIDWORKS 2024", VersionKey = "2024" },
-				new VersionOption { Display = "SOLIDWORKS 2023", VersionKey = "2023" },
-				new VersionOption { Display = "SOLIDWORKS 2023 - CURRENT", VersionKey = "2023", IsCurrent = true }
-			};
+        public ObservableCollection<VersionOption> SolidWorksVersions { get; } =
+            new ObservableCollection<VersionOption>();
 
 		private VersionOption _selectedVersion;
 		public VersionOption SelectedVersion
@@ -34,6 +31,44 @@ namespace MyApp.UI.ViewModels
 				}
 			}
 		}
+
+        private void LoadVersions()
+        {
+            SolidWorksVersions.Clear();
+
+            var installed = SolidWorksService.GetInstalledVersions();
+            var running = SolidWorksService.GetRunningInstances();
+
+            var runningYears = running
+                .Where(r => !string.IsNullOrWhiteSpace(r.Year))
+                .Select(r => r.Year)
+                .Distinct()
+                .ToHashSet();
+
+            // Sort installed by year desc if numeric
+            var ordered = installed
+                .OrderByDescending(v => {
+                    int y; return int.TryParse(v.Year, out y) ? y : int.MinValue; })
+                .ThenByDescending(v => v.Year)
+                .ToList();
+
+            foreach (var v in ordered)
+            {
+                bool isCurrent = runningYears.Contains(v.Year);
+                var display = (isCurrent ? $"{v.ProductName} - CURRENT" : v.ProductName);
+                SolidWorksVersions.Add(new VersionOption
+                {
+                    Display = display,
+                    VersionKey = v.Year,
+                    IsCurrent = isCurrent
+                });
+            }
+
+            if (SolidWorksVersions.Count > 0)
+            {
+                SelectedVersion = SolidWorksVersions[0];
+            }
+        }
 
 		public event PropertyChangedEventHandler PropertyChanged;
 		protected void OnPropertyChanged([CallerMemberName] string propertyName = null)

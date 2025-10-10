@@ -106,5 +106,11 @@
   <ItemGroup>
     <Resource Include="Assets\icons8-solidworks-48.png" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SolidWorksOpenFunction\SolidWorksOpenFunction.csproj">
+      <Project>{4B055965-E0AE-43F6-A545-E55EBAB4EF0A}</Project>
+      <Name>SolidWorksOpenFunction</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

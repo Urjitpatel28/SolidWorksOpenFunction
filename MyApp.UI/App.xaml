@@ -2,8 +2,43 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:MyApp.UI"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              StartupUri="Views/MainWindow.xaml">
     <Application.Resources>
-         
+        <!-- Theme Resources -->
+        <Color x:Key="Color.Primary">#FF0D6EFD</Color>
+        <Color x:Key="Color.Accent">#FF6C757D</Color>
+        <Color x:Key="Color.Surface">#FFFFFFFF</Color>
+        <Color x:Key="Color.Border">#22000000</Color>
+        <Color x:Key="Color.Background">#FFF5F7FB</Color>
+
+        <SolidColorBrush x:Key="Brush.Primary" Color="{StaticResource Color.Primary}" />
+        <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+        <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}" />
+        <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+        <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}" />
+
+        <FontFamily x:Key="Font.Primary">Segoe UI</FontFamily>
+        <sys:Double x:Key="CornerRadius.Small">6</sys:Double>
+
+        <!-- Simple Text Styles -->
+        <Style x:Key="Text.Headline" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Font.Primary}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#222" />
+        </Style>
+        <Style x:Key="Text.Body" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Font.Primary}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#333" />
+        </Style>
+
+        <!-- Basic ComboBox style tweaks -->
+        <Style TargetType="ComboBox">
+            <Setter Property="FontFamily" Value="{StaticResource Font.Primary}" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
     </Application.Resources>
 </Application>

@@ -5,7 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Management;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace SolidWorksOpenFunction
@@ -14,15 +16,17 @@ namespace SolidWorksOpenFunction
 	{
 		public static Logger logger = LoggingService.ConfigureLogger();
 
+		[DllImport("user32.dll")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		static extern bool SetForegroundWindow(IntPtr hWnd);
+
 		static void Main(string[] args)
 		{
-
 			// 1) Installed versions
 			var installed = GetInstalledSolidWorksVersions();
 			Console.WriteLine("== INSTALLED SOLIDWORKS VERSIONS ==");
 			//logger.Warn("== INSTALLED SOLIDWORKS VERSIONS ==");
 			if (installed.Count == 0)
-
 			{
 				Console.WriteLine("No installations found via registry.");
 			}
@@ -37,14 +41,12 @@ namespace SolidWorksOpenFunction
 					if (ap && bp) return by.CompareTo(ay);
 					return string.Compare(b.Year, a.Year, StringComparison.OrdinalIgnoreCase);
 				});
-
 				foreach (var v in installed)
 				{
 					Console.WriteLine(
 						$"Year: {v.Year,-6} Product: {v.ProductName,-18} Build: {v.ProductVersion,-12} Path: {v.ExePath}");
 				}
 			}
-
 			Console.WriteLine();
 
 			// 2) Running instances
@@ -62,15 +64,48 @@ namespace SolidWorksOpenFunction
 						$"PID: {r.PID,-7} Year: {r.Year,-6} Product: {r.ProductName,-18} Build: {r.Build,-12} Path: {r.Path}");
 				}
 			}
-
 			Console.WriteLine();
-			Console.WriteLine($"Found {running.Count} SolidWorks instance(s).");
 
-			// Get the window upfront
-			Console.Write($"Enter PID : ");
-			int pid = Convert.ToInt32(Console.ReadLine());
-			bool result = WindowHelper.BringWindowToFront(pid);
-			Console.WriteLine($"Operation {(result ? "succeeded" : "failed")}.");
+			Console.WriteLine($"Found {running.Count} SolidWorks instance(s).");
+			if (running.Count > 0)
+			{
+				// Get the window upfront
+				Console.Write($"Enter PID : ");
+				int pid = Convert.ToInt32(Console.ReadLine());
+				bool result = BringWindowToFront(pid);
+				Console.WriteLine($"Operation {(result ? "succeeded" : "failed")}.");
+			}
+			else
+			{
+				Console.Write($"Enter SW Version (year) : ");
+				int swVersion = Convert.ToInt32(Console.ReadLine());
+				var selected = installed.FirstOrDefault(v => v.Year == swVersion.ToString());
+				if (selected != null)
+				{
+					Process.Start(selected.ExePath);
+				}
+				else
+				{
+					Console.WriteLine("No matching version found.");
+				}
+			}
+		}
+
+		private static bool BringWindowToFront(int pid)
+		{
+			try
+			{
+				var process = Process.GetProcessById(pid);
+				if (process.MainWindowHandle != IntPtr.Zero)
+				{
+					return SetForegroundWindow(process.MainWindowHandle);
+				}
+				return false;
+			}
+			catch
+			{
+				return false;
+			}
 		}
 
 		// -------- Models --------
@@ -99,7 +134,6 @@ namespace SolidWorksOpenFunction
 			var list = new List<SWInstall>();
 			var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			string[] valueNames = { "SolidWorks Folder", "InstallDir" };
-
 			foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
 			{
 				foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
@@ -110,26 +144,20 @@ namespace SolidWorksOpenFunction
 						using (var swKey = baseKey.OpenSubKey(@"SOFTWARE\SolidWorks"))
 						{
 							if (swKey == null) continue;
-
 							foreach (var subKeyName in swKey.GetSubKeyNames())
 							{
 								if (!subKeyName.StartsWith("SOLIDWORKS ", StringComparison.OrdinalIgnoreCase))
 									continue;
-
 								string year = subKeyName.Replace("SOLIDWORKS ", "").Trim();
 								string setupKeyPath = $@"SOFTWARE\SolidWorks\{subKeyName}\Setup";
-
 								using (var setupKey = baseKey.OpenSubKey(setupKeyPath))
 								{
 									if (setupKey == null) continue;
-
 									string exePath = null;
-
 									foreach (var valueName in valueNames)
 									{
 										var v = setupKey.GetValue(valueName) as string;
 										if (string.IsNullOrWhiteSpace(v)) continue;
-
 										var candidate = Path.Combine(v, "SLDWORKS.exe");
 										if (File.Exists(candidate))
 										{
@@ -137,12 +165,9 @@ namespace SolidWorksOpenFunction
 											break;
 										}
 									}
-
 									if (string.IsNullOrEmpty(exePath) || seenPaths.Contains(exePath))
 										continue;
-
 									seenPaths.Add(exePath);
-
 									// Read file version info from disk
 									string productName = "SOLIDWORKS " + year;
 									string productVersion = "<unknown>";
@@ -153,7 +178,6 @@ namespace SolidWorksOpenFunction
 										if (!string.IsNullOrEmpty(fvi.ProductVersion)) productVersion = fvi.ProductVersion;
 									}
 									catch { /* ignore */ }
-
 									list.Add(new SWInstall
 									{
 										Year = year,
@@ -171,7 +195,6 @@ namespace SolidWorksOpenFunction
 					}
 				}
 			}
-
 			return list;
 		}
 
@@ -191,13 +214,10 @@ namespace SolidWorksOpenFunction
 					{
 						var pidObj = mo["ProcessId"];
 						var path = mo["ExecutablePath"] as string;
-
 						int pid = pidObj != null ? Convert.ToInt32(pidObj) : -1;
-
 						string productName = "<unknown>";
 						string build = "<unknown>";
 						string year = "<unknown>";
-
 						try
 						{
 							if (!string.IsNullOrEmpty(path))
@@ -205,7 +225,6 @@ namespace SolidWorksOpenFunction
 								var fvi = FileVersionInfo.GetVersionInfo(path);
 								if (!string.IsNullOrEmpty(fvi.ProductName)) productName = fvi.ProductName;
 								if (!string.IsNullOrEmpty(fvi.ProductVersion)) build = fvi.ProductVersion;
-
 								var m = Regex.Match(productName ?? "", @"\b(20\d{2})\b");
 								if (m.Success) year = m.Groups[1].Value;
 							}
@@ -214,7 +233,6 @@ namespace SolidWorksOpenFunction
 						{
 							// Safe fallback if file is locked or inaccessible
 						}
-
 						list.Add(new SWInstance
 						{
 							PID = pid,
@@ -230,7 +248,6 @@ namespace SolidWorksOpenFunction
 			{
 				Console.WriteLine("WMI query failed: " + ex.Message);
 			}
-
 			return list;
 		}
 	}
