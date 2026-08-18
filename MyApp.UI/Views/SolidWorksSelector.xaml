@@ -3,8 +3,56 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:v="clr-namespace:MyApp.UI.Views"
              mc:Ignorable="d"
-             d:DesignHeight="120" d:DesignWidth="420">
+             d:DesignHeight="160" d:DesignWidth="520">
+    <UserControl.Resources>
+        <v:BoolToVisibleConverter x:Key="BoolToVisible"/>
+
+        <DataTemplate x:Key="InstanceSelectionTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#x25CF;" FontSize="9" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="#198754"
+                           ToolTip="This instance is running"
+                           Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisible}}" />
+                <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="InstanceRowTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#x25CF;" FontSize="9" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="#198754"
+                           ToolTip="This instance is running"
+                           Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisible}}" />
+                <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+                <Button Content="Show"
+                        FontSize="11"
+                        Margin="8,0,0,0"
+                        Padding="6,1"
+                        Cursor="Hand"
+                        ToolTip="Bring this SOLIDWORKS window to the front"
+                        PreviewMouseLeftButtonDown="InstanceBringToFront_PreviewMouseLeftButtonDown"
+                        PreviewMouseLeftButtonUp="InstanceBringToFront_PreviewMouseLeftButtonUp">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
+
+        <v:InstanceRowTemplateSelector x:Key="InstanceRowSelector"
+                                       RowTemplate="{StaticResource InstanceRowTemplate}"
+                                       SelectionTemplate="{StaticResource InstanceSelectionTemplate}"/>
+    </UserControl.Resources>
+
     <Border Background="{DynamicResource Brush.Surface}"
             CornerRadius="6"
             Padding="12"
@@ -14,36 +62,81 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <StackPanel Orientation="Horizontal" Grid.Row="0" VerticalAlignment="Center">
                 <Image Source="/Assets/icons8-solidworks-48.png" Width="32" Height="32" Margin="0,0,8,0"/>
-                <TextBlock Text="Select SOLIDWORKS Version"
+                <TextBlock Text="SOLIDWORKS instance"
                            Style="{StaticResource Text.Headline}"/>
             </StackPanel>
 
             <DockPanel Grid.Row="1" Margin="0,10,0,0">
-                <ComboBox Width="260"
+                <ComboBox x:Name="InstanceComboBox"
+                          Width="300"
                           Margin="0,0,10,0"
-                          ItemsSource="{Binding SolidWorksVersions}"
-                          SelectedItem="{Binding SelectedVersion, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <Image Source="/Assets/icons8-solidworks-48.png" Width="18" Height="18" Margin="0,0,6,0"/>
-                                <TextBlock Text="{Binding Display}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
+                          ItemsSource="{Binding Instances}"
+                          SelectedItem="{Binding SelectedInstance, Mode=TwoWay}"
+                          IsEnabled="{Binding CanPick}"
+                          DropDownOpened="InstanceComboBox_DropDownOpened"
+                          ItemTemplateSelector="{StaticResource InstanceRowSelector}"
+                          ToolTip="Installed SOLIDWORKS versions, plus every instance that is running right now"/>
 
-                <Button Content="Open"
-                        Width="100"
+                <Button MinWidth="110"
                         Background="{DynamicResource Brush.Primary}"
                         Foreground="White"
                         Padding="8,4"
                         Cursor="Hand"
-                        Click="OnOpenClick"/>
+                        Command="{Binding ConnectOrDisconnectCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Content" Value="Connect"/>
+                            <Setter Property="Background" Value="{DynamicResource Brush.Primary}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="MinWidth" Value="110"/>
+                            <Setter Property="Padding" Value="8,4"/>
+                            <Setter Property="Cursor" Value="Hand"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding State}" Value="Connecting">
+                                    <Setter Property="Content" Value="Connecting..."/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding State}" Value="Connected">
+                                    <Setter Property="Content" Value="Disconnect"/>
+                                    <Setter Property="Background" Value="#DC3545"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding State}" Value="Disconnecting">
+                                    <Setter Property="Content" Value="Disconnecting..."/>
+                                    <Setter Property="Background" Value="#DC3545"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </DockPanel>
+
+            <TextBlock Grid.Row="2" Margin="0,8,0,0"
+                       Text="{Binding StatusMessage}"
+                       TextTrimming="CharacterEllipsis"
+                       FontSize="12">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Body}">
+                        <Setter Property="Foreground" Value="#666"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                <Setter Property="Foreground" Value="#DC3545"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding StatusIsSuccess}" Value="True">
+                                <Setter Property="Foreground" Value="#198754"/>
+                            </DataTrigger>
+                            <Trigger Property="Text" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="Text" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
         </Grid>
     </Border>
 </UserControl>

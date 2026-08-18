@@ -6,9 +6,10 @@
         xmlns:local="clr-namespace:MyApp.UI" 
         xmlns:views="clr-namespace:MyApp.UI.Views"
         mc:Ignorable="d"
-        Title="SOLIDWORKS Launcher" Height="200" Width="480"
-        Background="{DynamicResource Brush.Background}">
+        Title="SOLIDWORKS Launcher" Height="240" Width="560"
+        Background="{DynamicResource Brush.Background}"
+        Closing="Window_Closing">
     <Border Padding="16">
-        <views:SolidWorksSelector/>
+        <views:SolidWorksSelector x:Name="Selector"/>
     </Border>
 </Window>

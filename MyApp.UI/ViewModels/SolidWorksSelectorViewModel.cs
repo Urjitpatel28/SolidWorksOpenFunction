@@ -1,77 +1,249 @@
-﻿using MyApp.UI.Models;
-using SolidWorksOpenFunction;
+﻿using SolidWorksOpenFunction;
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Windows.Threading;
 
 namespace MyApp.UI.ViewModels
 {
-	public class SolidWorksSelectorViewModel : INotifyPropertyChanged
+	public enum SwConnectionState
 	{
-        public SolidWorksSelectorViewModel()
-        {
-            LoadVersions();
-        }
+		Disconnected,
+		Connecting,
+		Connected,
+		Disconnecting
+	}
 
-        public ObservableCollection<VersionOption> SolidWorksVersions { get; } =
-            new ObservableCollection<VersionOption>();
+	public enum SwStatusKind
+	{
+		Info,
+		Success,
+		Error
+	}
 
-		private VersionOption _selectedVersion;
-		public VersionOption SelectedVersion
+	public sealed class SolidWorksSelectorViewModel : INotifyPropertyChanged, IDisposable
+	{
+		private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(3);
+
+		private readonly DispatcherTimer _refreshTimer;
+		private SwInstanceInfo _selectedInstance;
+		private SwConnectionState _state;
+		private string _statusMessage;
+		private SwStatusKind _statusKind;
+
+		public SolidWorksSelectorViewModel()
 		{
-			get => _selectedVersion;
+			ConnectOrDisconnectCommand = new RelayCommand(ConnectOrDisconnect, CanConnectOrDisconnect);
+			Refresh();
+
+			_refreshTimer = new DispatcherTimer { Interval = RefreshInterval };
+			_refreshTimer.Tick += (s, e) => Refresh();
+			_refreshTimer.Start();
+		}
+
+		public ObservableCollection<SwInstanceInfo> Instances { get; } =
+			new ObservableCollection<SwInstanceInfo>();
+
+		public SwInstanceInfo SelectedInstance
+		{
+			get => _selectedInstance;
 			set
 			{
-				if (_selectedVersion != value)
+				if (_selectedInstance != value)
 				{
-					_selectedVersion = value;
+					_selectedInstance = value;
 					OnPropertyChanged();
-					// run-on-selected logic here
+					ConnectOrDisconnectCommand.RaiseCanExecuteChanged();
 				}
 			}
 		}
 
-        private void LoadVersions()
-        {
-            SolidWorksVersions.Clear();
+		public SwConnectionState State
+		{
+			get => _state;
+			private set
+			{
+				if (_state != value)
+				{
+					_state = value;
+					OnPropertyChanged();
+					OnPropertyChanged(nameof(CanPick));
+					ConnectOrDisconnectCommand.RaiseCanExecuteChanged();
+				}
+			}
+		}
 
-            var installed = SolidWorksService.GetInstalledVersions();
-            var running = SolidWorksService.GetRunningInstances();
+		public bool CanPick => State == SwConnectionState.Disconnected;
 
-            var runningYears = running
-                .Where(r => !string.IsNullOrWhiteSpace(r.Year))
-                .Select(r => r.Year)
-                .Distinct()
-                .ToHashSet();
+		public string StatusMessage
+		{
+			get => _statusMessage;
+			private set
+			{
+				if (_statusMessage != value)
+				{
+					_statusMessage = value;
+					OnPropertyChanged();
+				}
+			}
+		}
 
-            // Sort installed by year desc if numeric
-            var ordered = installed
-                .OrderByDescending(v => {
-                    int y; return int.TryParse(v.Year, out y) ? y : int.MinValue; })
-                .ThenByDescending(v => v.Year)
-                .ToList();
+		public bool StatusIsError => _statusKind == SwStatusKind.Error;
 
-            foreach (var v in ordered)
-            {
-                bool isCurrent = runningYears.Contains(v.Year);
-                var display = (isCurrent ? $"{v.ProductName} - CURRENT" : v.ProductName);
-                SolidWorksVersions.Add(new VersionOption
-                {
-                    Display = display,
-                    VersionKey = v.Year,
-                    IsCurrent = isCurrent
-                });
-            }
+		public bool StatusIsSuccess => _statusKind == SwStatusKind.Success;
 
-            if (SolidWorksVersions.Count > 0)
-            {
-                SelectedVersion = SolidWorksVersions[0];
-            }
-        }
+		public RelayCommand ConnectOrDisconnectCommand { get; }
+
+		public event EventHandler<SwInstanceInfo> ConnectRequested;
+		public event EventHandler DisconnectRequested;
+
+		private bool CanConnectOrDisconnect()
+		{
+			return State == SwConnectionState.Connected
+				|| (State == SwConnectionState.Disconnected && SelectedInstance != null);
+		}
+
+		private void ConnectOrDisconnect()
+		{
+			if (State == SwConnectionState.Connected)
+			{
+				State = SwConnectionState.Disconnecting;
+				SetStatus("Disconnecting...", SwStatusKind.Info);
+				DisconnectRequested?.Invoke(this, EventArgs.Empty);
+			}
+			else if (State == SwConnectionState.Disconnected && SelectedInstance != null)
+			{
+				State = SwConnectionState.Connecting;
+				SetStatus("Connecting to " + SelectedInstance.DisplayName + "...", SwStatusKind.Info);
+				ConnectRequested?.Invoke(this, SelectedInstance);
+			}
+		}
+
+		public void ReportProgress(string message)
+		{
+			SetStatus(message, SwStatusKind.Info);
+		}
+
+		public void HandleConnected(string message)
+		{
+			State = SwConnectionState.Connected;
+			SetStatus(message, SwStatusKind.Success);
+			Refresh();
+		}
+
+		public void HandleConnectionFailed(string message)
+		{
+			State = SwConnectionState.Disconnected;
+			SetStatus(message, SwStatusKind.Error);
+			Refresh();
+		}
+
+		public void HandleDisconnected()
+		{
+			State = SwConnectionState.Disconnected;
+			SetStatus("Disconnected.", SwStatusKind.Error);
+			Refresh();
+		}
+
+		public void HandleConnectionLost(string message)
+		{
+			State = SwConnectionState.Disconnected;
+			SetStatus(message, SwStatusKind.Error);
+			Refresh();
+		}
+
+		public void Refresh()
+		{
+			IReadOnlyList<SwInstanceInfo> found;
+			try
+			{
+				found = SolidWorksService.FindInstances();
+			}
+			catch
+			{
+				return;
+			}
+
+			if (SameAsCurrent(found))
+			{
+				return;
+			}
+
+			string selectedKey = SelectedInstance != null ? SelectedInstance.Key : null;
+
+			Instances.Clear();
+			foreach (SwInstanceInfo instance in found)
+			{
+				Instances.Add(instance);
+			}
+
+			SwInstanceInfo reselected = selectedKey == null
+				? null
+				: found.FirstOrDefault(instance => instance.Key == selectedKey);
+
+			SelectedInstance = reselected
+				?? found.Where(instance => !instance.IsRunning)
+						.OrderByDescending(instance => instance.Year)
+						.FirstOrDefault()
+				?? found.FirstOrDefault();
+
+			if (found.Count == 0 && State == SwConnectionState.Disconnected)
+			{
+				SetStatus("No SOLIDWORKS installation was found on this machine.", SwStatusKind.Error);
+			}
+		}
+
+		private bool SameAsCurrent(IReadOnlyList<SwInstanceInfo> found)
+		{
+			if (found.Count != Instances.Count)
+			{
+				return false;
+			}
+
+			for (int i = 0; i < found.Count; i++)
+			{
+				if (found[i].Key != Instances[i].Key)
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		public void BringToFront(SwInstanceInfo instance)
+		{
+			if (instance == null || instance.ProcessId == null)
+			{
+				return;
+			}
+
+			WindowHelper.BringWindowToFront(instance.ProcessId.Value);
+		}
+
+		private void SetStatus(string message, SwStatusKind kind)
+		{
+			StatusMessage = message;
+
+			if (_statusKind != kind)
+			{
+				_statusKind = kind;
+				OnPropertyChanged(nameof(StatusIsError));
+				OnPropertyChanged(nameof(StatusIsSuccess));
+			}
+		}
+
+		public void Dispose()
+		{
+			_refreshTimer.Stop();
+		}
 
 		public event PropertyChangedEventHandler PropertyChanged;
-		protected void OnPropertyChanged([CallerMemberName] string propertyName = null)
+
+		private void OnPropertyChanged([CallerMemberName] string propertyName = null)
 		{
 			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 		}

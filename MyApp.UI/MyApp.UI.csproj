@@ -56,7 +56,10 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Models\VersionOption.cs" />
+    <Compile Include="ViewModels\RelayCommand.cs" />
     <Compile Include="ViewModels\SolidWorksSelectorViewModel.cs" />
+    <Compile Include="Views\BoolToVisibleConverter.cs" />
+    <Compile Include="Views\InstanceRowTemplateSelector.cs" />
     <Compile Include="Views\SolidWorksSelector.xaml.cs">
       <DependentUpon>SolidWorksSelector.xaml</DependentUpon>
     </Compile>

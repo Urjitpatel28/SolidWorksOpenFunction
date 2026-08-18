@@ -27,6 +27,90 @@ namespace SolidWorksOpenFunction
 			public string Path;
 		}
 
+		public static List<SwInstanceInfo> FindInstances()
+		{
+			var instances = new List<SwInstanceInfo>();
+			instances.AddRange(ToInstalledInstanceInfo());
+			instances.AddRange(ToRunningInstanceInfo());
+			return instances;
+		}
+
+		private static List<SwInstanceInfo> ToInstalledInstanceInfo()
+		{
+			var installed = new List<SwInstanceInfo>();
+			foreach (var version in GetInstalledVersions())
+			{
+				int year;
+				if (!int.TryParse(version.Year, out year))
+				{
+					year = 0;
+				}
+
+				installed.Add(new SwInstanceInfo(year, version.ExePath, null));
+			}
+
+			installed.Sort((a, b) => a.Year.CompareTo(b.Year));
+			return installed;
+		}
+
+		private static List<SwInstanceInfo> ToRunningInstanceInfo()
+		{
+			const int versionYearOffset = 1992;
+			var running = new List<SwInstanceInfo>();
+
+			Process[] processes;
+			try
+			{
+				processes = Process.GetProcessesByName("SLDWORKS");
+			}
+			catch
+			{
+				return running;
+			}
+
+			foreach (Process process in processes)
+			{
+				using (process)
+				{
+					int year = 0;
+					string exePath = null;
+
+					try
+					{
+						exePath = process.MainModule != null ? process.MainModule.FileName : null;
+						if (exePath != null)
+						{
+							int major = FileVersionInfo.GetVersionInfo(exePath).FileMajorPart;
+							if (major > 0)
+							{
+								year = major + versionYearOffset;
+							}
+						}
+					}
+					catch
+					{
+					}
+
+					running.Add(new SwInstanceInfo(year, exePath, process.Id));
+				}
+			}
+
+			running.Sort((a, b) =>
+			{
+				int yearCompare = a.Year.CompareTo(b.Year);
+				if (yearCompare != 0)
+				{
+					return yearCompare;
+				}
+
+				int aPid = a.ProcessId ?? 0;
+				int bPid = b.ProcessId ?? 0;
+				return aPid.CompareTo(bPid);
+			});
+
+			return running;
+		}
+
 		public static List<InstalledVersion> GetInstalledVersions()
 		{
 			var list = new List<InstalledVersion>();
